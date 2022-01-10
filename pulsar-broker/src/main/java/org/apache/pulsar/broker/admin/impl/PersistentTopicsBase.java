@@ -2054,7 +2054,7 @@ public class PersistentTopicsBase extends AdminResource {
     }
 
     protected void internalCreateSubscription(AsyncResponse asyncResponse, String subscriptionName,
-            MessageIdImpl messageId, boolean authoritative, boolean replicated) {
+            MessageIdImpl messageId, boolean authoritative, boolean replicated, boolean isExcluded, int batchIndex) {
         if (topicName.isGlobal()) {
             try {
                 validateGlobalNamespaceOwnership(namespaceName);
@@ -2071,7 +2071,7 @@ public class PersistentTopicsBase extends AdminResource {
         // If the topic name is a partition name, no need to get partition topic metadata again
         if (topicName.isPartitioned()) {
             internalCreateSubscriptionForNonPartitionedTopic(asyncResponse,
-                    subscriptionName, targetMessageId, authoritative, replicated);
+                    subscriptionName, targetMessageId, authoritative, replicated, isExcluded, batchIndex);
         } else {
             boolean allowAutoTopicCreation = pulsar().getBrokerService().isAllowAutoTopicCreation(topicName);
             getPartitionedTopicMetadataAsync(topicName,
@@ -2143,7 +2143,7 @@ public class PersistentTopicsBase extends AdminResource {
                     });
                 } else {
                     internalCreateSubscriptionForNonPartitionedTopic(asyncResponse,
-                            subscriptionName, targetMessageId, authoritative, replicated);
+                            subscriptionName, targetMessageId, authoritative, replicated, isExcluded, batchIndex);
                 }
             }).exceptionally(ex -> {
                 log.error("[{}] Failed to create subscription {} on topic {}",
@@ -2156,7 +2156,8 @@ public class PersistentTopicsBase extends AdminResource {
 
     private void internalCreateSubscriptionForNonPartitionedTopic(
             AsyncResponse asyncResponse, String subscriptionName,
-            MessageIdImpl targetMessageId, boolean authoritative, boolean replicated) {
+            MessageIdImpl targetMessageId, boolean authoritative, boolean replicated, boolean isExcluded,
+            int batchIndex) {
 
         boolean isAllowAutoTopicCreation = pulsar().getBrokerService().isAllowAutoTopicCreation(topicName);
 
@@ -2180,8 +2181,12 @@ public class PersistentTopicsBase extends AdminResource {
         }).thenCompose(subscription -> {
             // Mark the cursor as "inactive" as it was created without a real consumer connected
             ((PersistentSubscription) subscription).deactivateCursor();
-            return subscription.resetCursor(
-                    PositionImpl.get(targetMessageId.getLedgerId(), targetMessageId.getEntryId()));
+            CompletableFuture<Integer> batchSizeFuture = new CompletableFuture<>();
+            getEntryBatchSize(batchSizeFuture, (PersistentTopic) subscription.getTopic(), targetMessageId, batchIndex);
+            return batchSizeFuture.thenCompose(bi -> {
+                PositionImpl initPosition = calculatePositionAckSet(isExcluded, bi, batchIndex, targetMessageId);
+                return subscription.resetCursor(initPosition);
+            });
         }).thenRun(() -> {
             log.info("[{}][{}] Successfully created subscription {} at message id {}", clientAppId(),
                     topicName, subscriptionName, targetMessageId);
