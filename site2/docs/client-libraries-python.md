@@ -61,6 +61,7 @@ To install the built Python bindings:
 ```shell
 $ git clone https://github.com/apache/pulsar
 $ cd pulsar/pulsar-client-cpp/python
+$ python -m pip install certifi fastavro
 $ sudo python setup.py install
 ```
 
