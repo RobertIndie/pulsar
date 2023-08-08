@@ -487,30 +487,54 @@ public class ProducerImpl<T> extends ProducerBase<T> implements TimerTask, Conne
         updateMessageMetadata(msgMetadata, uncompressedSize);
 
         // send in chunks
-        int totalChunks;
-        int payloadChunkSize;
-        if (canAddToBatch(msg) || !conf.isChunkingEnabled()) {
-            totalChunks = 1;
-            payloadChunkSize = ClientCnx.getMaxMessageSize();
-        } else {
+        int totalChunks = 1;
+        int payloadChunkSize = ClientCnx.getMaxMessageSize();
+        if (conf.isChunkingEnabled()) {
             // Reserve current metadata size for chunk size to avoid message size overflow.
             // NOTE: this is not strictly bounded, as metadata will be updated after chunking.
             // So there is a small chance that the final message size is larger than ClientCnx.getMaxMessageSize().
             // But it won't cause produce failure as broker have 10 KB padding space for these cases.
             payloadChunkSize = ClientCnx.getMaxMessageSize() - msgMetadata.getSerializedSize();
-            if (payloadChunkSize <= 0) {
-                PulsarClientException.InvalidMessageException invalidMessageException =
-                        new PulsarClientException.InvalidMessageException(
-                                format("The producer %s of the topic %s sends a message with %d bytes metadata that "
-                                                + "exceeds %d bytes", producerName, topic,
-                                        msgMetadata.getSerializedSize(), ClientCnx.getMaxMessageSize()));
-                completeCallbackAndReleaseSemaphore(uncompressedSize, callback, invalidMessageException);
-                compressedPayload.release();
-                return;
+            if (compressedPayload.readableBytes() > payloadChunkSize) {
+                if (payloadChunkSize <= 0) {
+                    PulsarClientException.InvalidMessageException invalidMessageException =
+                            new PulsarClientException.InvalidMessageException(
+                                    format("The producer %s of the topic %s sends a message with %d bytes metadata "
+                                                    + "that "
+                                                    + "exceeds %d bytes", producerName, topic,
+                                            msgMetadata.getSerializedSize(), ClientCnx.getMaxMessageSize()));
+                    completeCallbackAndReleaseSemaphore(uncompressedSize, callback, invalidMessageException);
+                    compressedPayload.release();
+                    return;
+                }
+                payloadChunkSize = Math.min(chunkMaxMessageSize, payloadChunkSize);
+                totalChunks = MathUtils.ceilDiv(Math.max(1, compressedPayload.readableBytes()), payloadChunkSize);
             }
-            payloadChunkSize = Math.min(chunkMaxMessageSize, payloadChunkSize);
-            totalChunks = MathUtils.ceilDiv(Math.max(1, compressedPayload.readableBytes()), payloadChunkSize);
         }
+
+
+
+//        if (canAddToBatch(msg) || !conf.isChunkingEnabled()) {
+//            // can batch and chunking
+//            // can batch and can't chunking
+//            // can't batch and can't chunking
+//            totalChunks = 1;
+//            payloadChunkSize = ClientCnx.getMaxMessageSize();
+//        } else {
+//            // can't batch and chunking
+//            if (payloadChunkSize <= 0) {
+//                PulsarClientException.InvalidMessageException invalidMessageException =
+//                        new PulsarClientException.InvalidMessageException(
+//                                format("The producer %s of the topic %s sends a message with %d bytes metadata that "
+//                                                + "exceeds %d bytes", producerName, topic,
+//                                        msgMetadata.getSerializedSize(), ClientCnx.getMaxMessageSize()));
+//                completeCallbackAndReleaseSemaphore(uncompressedSize, callback, invalidMessageException);
+//                compressedPayload.release();
+//                return;
+//            }
+//            payloadChunkSize = Math.min(chunkMaxMessageSize, payloadChunkSize);
+//            totalChunks = MathUtils.ceilDiv(Math.max(1, compressedPayload.readableBytes()), payloadChunkSize);
+//        }
 
         // chunked message also sent individually so, try to acquire send-permits
         for (int i = 0; i < (totalChunks - 1); i++) {
@@ -674,6 +698,7 @@ public class ProducerImpl<T> extends ProducerBase<T> implements TimerTask, Conne
                 doBatchSendAndAdd(msg, callback, payload);
             }
         } else {
+            batchMessageAndSend(false);
             // in this case compression has not been applied by the caller
             // but we have to compress the payload if compression is configured
             if (!compressed) {
@@ -2167,7 +2192,7 @@ public class ProducerImpl<T> extends ProducerBase<T> implements TimerTask, Conne
             log.trace("[{}] [{}] Batching the messages from the batch container with {} messages", topic, producerName,
                     batchMessageContainer.getNumMessagesInBatch());
         }
-        if (!batchMessageContainer.isEmpty()) {
+        if (batchMessageContainer != null && !batchMessageContainer.isEmpty()) {
             try {
                 lastBatchSendNanoTime = System.nanoTime();
                 List<OpSendMsg> opSendMsgs;
