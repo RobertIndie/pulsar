@@ -698,7 +698,11 @@ public class ProducerImpl<T> extends ProducerBase<T> implements TimerTask, Conne
                 doBatchSendAndAdd(msg, callback, payload);
             }
         } else {
-            batchMessageAndSend(false);
+            if (canAddToBatch(msg) && totalChunks > 1) {
+                // If the message has deliverAtTime, we shouldn't send the current batch.
+                batchMessageAndSend(false);
+            }
+
             // in this case compression has not been applied by the caller
             // but we have to compress the payload if compression is configured
             if (!compressed) {
@@ -2192,7 +2196,7 @@ public class ProducerImpl<T> extends ProducerBase<T> implements TimerTask, Conne
             log.trace("[{}] [{}] Batching the messages from the batch container with {} messages", topic, producerName,
                     batchMessageContainer.getNumMessagesInBatch());
         }
-        if (batchMessageContainer != null && !batchMessageContainer.isEmpty()) {
+        if (!batchMessageContainer.isEmpty()) {
             try {
                 lastBatchSendNanoTime = System.nanoTime();
                 List<OpSendMsg> opSendMsgs;
