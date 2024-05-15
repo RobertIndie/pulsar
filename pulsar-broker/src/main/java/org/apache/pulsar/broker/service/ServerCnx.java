@@ -1176,6 +1176,8 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
         final long consumerEpoch = subscribe.hasConsumerEpoch() ? subscribe.getConsumerEpoch() : DEFAULT_CONSUMER_EPOCH;
         final Optional<Map<String, String>> subscriptionProperties = SubscriptionOption.getPropertiesMap(
                 subscribe.getSubscriptionPropertiesList());
+        final boolean isReadOnly = subscriptionProperties.map(props -> Boolean.parseBoolean(
+                props.getOrDefault("ReadOnly", "false"))).orElse(false);
 
         if (log.isDebugEnabled()) {
             log.debug("Topic name = {}, subscription name = {}, schema is {}", topicName, subscriptionName,
@@ -1254,7 +1256,9 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
                 service.isAllowAutoTopicCreationAsync(topicName.toString())
                         .thenApply(isAllowed -> forceTopicCreation && isAllowed)
                         .thenCompose(createTopicIfDoesNotExist ->
-                                service.getTopic(topicName.toString(), createTopicIfDoesNotExist))
+                                isReadOnly ? service.getTopic(topicName, createTopicIfDoesNotExist,
+                                        null, isReadOnly) :
+                                        service.getTopic(topicName.toString(), createTopicIfDoesNotExist))
                         .thenCompose(optTopic -> {
                             if (!optTopic.isPresent()) {
                                 return FutureUtil

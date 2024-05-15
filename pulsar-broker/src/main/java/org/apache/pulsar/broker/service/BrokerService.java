@@ -134,6 +134,7 @@ import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminBuilder;
 import org.apache.pulsar.client.api.ClientBuilder;
 import org.apache.pulsar.client.api.PulsarClient;
+import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.SizeUnit;
 import org.apache.pulsar.client.impl.ClientBuilderImpl;
 import org.apache.pulsar.client.impl.conf.ClientConfigurationData;
@@ -999,8 +1000,45 @@ public class BrokerService implements Closeable {
         return getTopic(TopicName.get(topic), createIfMissing, properties);
     }
 
-    public CompletableFuture<Optional<Topic>> getTopic(final TopicName topicName, boolean createIfMissing,
-                                                       Map<String, String> properties) {
+    private PulsarAdmin getPulsarAdmin() throws PulsarClientException {
+        return PulsarAdmin.builder().serviceHttpUrl(getPulsar().getWebServiceAddress()).authentication(
+                pulsar.getConfiguration().getBrokerClientAuthenticationPlugin(),
+                pulsar.getConfiguration().getBrokerClientAuthenticationParameters()).build();
+    }
+
+    public CompletableFuture<Optional<Topic>> getTopic(final TopicName sourceTopicName, boolean createIfMissing,
+                                                       Map<String, String> sourceProperties){
+        return getTopic(sourceTopicName, createIfMissing, sourceProperties, false);
+    }
+
+    public CompletableFuture<Optional<Topic>> getTopic(final TopicName sourceTopicName, boolean createIfMissing,
+                                                       Map<String, String> properties, boolean isReadOnly) {
+        TopicName tmpTopicName = sourceTopicName;
+        if (!isSystemTopic(sourceTopicName) && isReadOnly) {
+//            properties.put("PULSAR.SHADOW_SOURCE", sourceTopicName.toString());
+//            tmpTopicName = TopicName.get(sourceTopicName.getPartitionedTopicName() + "-shadow");
+            tmpTopicName = TopicName.get(sourceTopicName.getDomain().toString(),
+                    NamespaceName.get(sourceTopicName.getNamespace() + "-shadow"), sourceTopicName.getLocalName());
+            try {
+                PulsarAdmin admin = getPulsarAdmin();
+                admin.topics().createShadowTopic(tmpTopicName.toString(), sourceTopicName.toString());
+                admin.topics().setShadowTopics(sourceTopicName.toString(), Collections.singletonList(tmpTopicName.toString()));
+//                List<String> list = admin.topics().getShadowTopics(sourceTopicName.toString());
+//                TopicPolicies sourceTopicPolicies =
+//                        getPulsar().getTopicPoliciesService().getTopicPoliciesIfExists(sourceTopicName);
+//                if (sourceTopicPolicies == null) {
+//                    sourceTopicPolicies = new TopicPolicies();
+//                }
+//                // TODO: Need lock for setting shadow topics
+//                sourceTopicPolicies.setShadowTopics(Collections.singletonList(tmpTopicName.toString()));
+//                // TODO: Make calling it async
+//                getPulsar().getTopicPoliciesService().updateTopicPoliciesAsync(sourceTopicName, sourceTopicPolicies).get();
+                System.out.printf("RO: Created shadow topic %s for %s\n", tmpTopicName, sourceTopicName);
+            } catch (Exception e) {
+                return FutureUtil.failedFuture(e);
+            }
+        }
+        final TopicName topicName = tmpTopicName;
         try {
             CompletableFuture<Optional<Topic>> topicFuture = topics.get(topicName.toString());
             if (topicFuture != null) {
@@ -1017,7 +1055,7 @@ public class BrokerService implements Closeable {
                             return topicFuture.thenCompose(value -> {
                                 if (!value.isPresent()) {
                                     // retry and create topic
-                                    return getTopic(topicName, createIfMissing, properties);
+                                    return getTopic(topicName, createIfMissing, properties, isReadOnly);
                                 } else {
                                     // in-progress future completed successfully
                                     return CompletableFuture.completedFuture(value);

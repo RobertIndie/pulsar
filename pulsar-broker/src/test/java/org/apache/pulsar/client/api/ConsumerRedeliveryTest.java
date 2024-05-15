@@ -23,6 +23,7 @@ import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -57,8 +58,10 @@ public class ConsumerRedeliveryTest extends ProducerConsumerBase {
     @Override
     protected void setup() throws Exception {
         conf.setManagedLedgerCacheEvictionIntervalMs(10000);
+        conf.setBookkeeperExplicitLacIntervalInMills(100);
         super.internalSetup();
         super.producerBaseSetup();
+        admin.namespaces().createNamespace("public/default-shadow");
     }
 
     @AfterClass(alwaysRun = true)
@@ -83,6 +86,55 @@ public class ConsumerRedeliveryTest extends ProducerConsumerBase {
                 { 3, 5, CommandAck.AckType.Cumulative },
                 { 5, 5, CommandAck.AckType.Cumulative }
         };
+    }
+
+    @Test
+    public void testShadowAdmin() throws Exception {
+        // TOOD: Need to fix it
+        admin.topics().createNonPartitionedTopic("test");
+        admin.topics().createShadowTopic("persistent://public/public/default-shadow/test", "persistent://public/default/test");
+    }
+
+    @Test
+    public void testReadOnly() throws Exception {
+        String topic = "persistent://public/default/test";
+        @Cleanup
+        Producer<String> producer = pulsarClient.newProducer(Schema.STRING)
+                .topic(topic)
+                .producerName("my-producer-name")
+                .create();
+        @Cleanup
+        Consumer<String> consumer = pulsarClient.newConsumer(Schema.STRING)
+                .topic(topic)
+                .subscriptionName("s1")
+                .subscriptionType(SubscriptionType.Shared)
+                .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
+                .subscriptionProperties(Collections.singletonMap("ReadOnly", "true"))
+                .subscribe();
+
+        Thread.sleep(3000);
+
+//        List<String> list = admin.topics().getShadowTopics(topic);
+//        List<String> source = Collections.singletonList(admin.topics().getShadowSource(list.get(0)));
+
+//        Consumer<String> shadowConsumer = pulsarClient.newConsumer(Schema.STRING)
+//                .topic("public/default-shadow/test")
+//                .subscriptionName("s2")
+//                .subscriptionType(SubscriptionType.Shared)
+//                .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
+//                .subscribe();
+
+        producer.send("Hello");
+
+//        Message<String> shadowMsg = shadowConsumer.receive(3, TimeUnit.SECONDS);
+//        assertNotNull(shadowMsg);
+
+        Message<String> msg = consumer.receive(3, TimeUnit.SECONDS);
+
+        assertNotNull(msg);
+
+        assertEquals(msg.getValue(), "Hello");
+
     }
 
     /**
