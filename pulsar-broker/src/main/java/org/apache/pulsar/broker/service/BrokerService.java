@@ -3561,7 +3561,7 @@ public class BrokerService implements Closeable {
         return isSystemTopic(TopicName.get(topic));
     }
 
-    public boolean isSystemTopic(TopicName topicName) {
+    public static boolean isSystemTopic(TopicName topicName) {
         return NamespaceService.isSystemServiceNamespace(topicName.getNamespace())
                 || SystemTopicNames.isSystemTopic(topicName);
     }

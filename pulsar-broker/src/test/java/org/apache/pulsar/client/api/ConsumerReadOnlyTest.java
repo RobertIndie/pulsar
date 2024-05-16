@@ -19,10 +19,14 @@
 package org.apache.pulsar.client.api;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
+import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.fail;
 import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 import lombok.Cleanup;
+import org.apache.pulsar.common.policies.data.TopicStats;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.annotations.AfterClass;
@@ -50,6 +54,7 @@ public class ConsumerReadOnlyTest extends ProducerConsumerBase {
     @Test
     public void testReadOnly() throws Exception {
         String topic = "persistent://public/default/test";
+        String subName = "my-sub";
         @Cleanup
         Producer<String> producer = pulsarClient.newProducer(Schema.STRING)
                 .topic(topic)
@@ -58,31 +63,49 @@ public class ConsumerReadOnlyTest extends ProducerConsumerBase {
         @Cleanup
         Consumer<String> consumer = pulsarClient.newConsumer(Schema.STRING)
                 .topic(topic)
-                .subscriptionName("s1")
+                .subscriptionName(subName)
                 .subscriptionType(SubscriptionType.Shared)
                 .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
                 .subscriptionProperties(Collections.singletonMap("ReadOnly", "true"))
                 .subscribe();
 
-        Thread.sleep(3000);
+        // The shadow topic is created asynchronously. We need to wait some time to let it be created.
+        Thread.sleep(1000);
 
-        MessageId id = producer.send("Hello");
+         producer.send("Hello");
 
         Message<String> msg = consumer.receive(3, TimeUnit.SECONDS);
-
         assertNotNull(msg);
-
         assertEquals(msg.getValue(), "Hello");
+
+        TopicStats srcTopicStats = admin.topics().getStats(topic);
+        assertTrue(srcTopicStats.getSubscriptions().isEmpty());
+        assertEquals(srcTopicStats.getMsgOutCounter(), 0);
+
+        String shadowTopic = "persistent://public/default-shadow/test";
+        TopicStats shadowTopicStats = admin.topics().getStats(shadowTopic);
+        assertFalse(shadowTopicStats.getSubscriptions().isEmpty());
+        assertTrue(shadowTopicStats.getSubscriptions().containsKey(subName));
 
         @Cleanup
         Consumer<String> shadowConsumer = pulsarClient.newConsumer(Schema.STRING)
-                .topic("public/default-shadow/test")
-                .subscriptionName("s2")
+                .topic(shadowTopic)
+                .subscriptionName("shadow-sub")
                 .subscriptionType(SubscriptionType.Shared)
                 .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
                 .subscribe();
 
         Message<String> shadowMsg = shadowConsumer.receive(3, TimeUnit.SECONDS);
         assertNotNull(shadowMsg);
+
+        try {
+            Producer<String> shadowProducer = pulsarClient.newProducer(Schema.STRING)
+                    .topic(shadowTopic)
+                    .create();
+            shadowProducer.send("test");
+            fail("Should fail");
+        } catch (PulsarClientException.NotAllowedException e) {
+            assertEquals(e.getMessage(), "Cannot send messages to a shadow topic");
+        }
     }
 }
