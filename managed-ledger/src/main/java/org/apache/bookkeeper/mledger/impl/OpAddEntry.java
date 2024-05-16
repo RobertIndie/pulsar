@@ -61,6 +61,7 @@ public class OpAddEntry implements AddCallback, CloseCallback, Runnable {
     volatile long lastInitTime;
     @SuppressWarnings("unused")
     ByteBuf data;
+    boolean insertToEntryCache = true;
     private int dataLength;
     private ManagedLedgerInterceptor.PayloadProcessorHandle payloadProcessorHandle = null;
 
@@ -228,7 +229,7 @@ public class OpAddEntry implements AddCallback, CloseCallback, Runnable {
         ManagedLedgerImpl.TOTAL_SIZE_UPDATER.addAndGet(ml, dataLength);
 
         long ledgerId = ledger != null ? ledger.getId() : ((Position) ctx).getLedgerId();
-        if (ml.hasActiveCursors()) {
+        if (ml.hasActiveCursors() && insertToEntryCache) {
             // Avoid caching entries if no cursor has been created
             EntryImpl entry = EntryImpl.create(ledgerId, entryId, data);
             // EntryCache.insert: duplicates entry by allocating new entry and data. so, recycle entry after calling

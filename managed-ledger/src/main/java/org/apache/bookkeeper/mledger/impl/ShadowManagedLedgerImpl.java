@@ -234,6 +234,7 @@ public class ShadowManagedLedgerImpl extends ManagedLedgerImpl {
             log.debug("[{}] Add entry into shadow ledger lh={} entries={}, pos=({},{})",
                     name, currentLedger.getId(), currentLedgerEntries, position.getLedgerId(), position.getEntryId());
         }
+        addOperation.insertToEntryCache = false; // TODO: Should introduce a configuration to control this behavior
         pendingAddEntries.add(addOperation);
         if (position.getLedgerId() <= currentLedger.getId()) {
             // Write into lastLedger

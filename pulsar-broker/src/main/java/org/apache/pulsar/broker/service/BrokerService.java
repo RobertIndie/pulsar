@@ -1013,32 +1013,21 @@ public class BrokerService implements Closeable {
 
     public CompletableFuture<Optional<Topic>> getTopic(final TopicName sourceTopicName, boolean createIfMissing,
                                                        Map<String, String> properties, boolean isReadOnly) {
-        TopicName tmpTopicName = sourceTopicName;
+        TopicName topic = sourceTopicName;
         if (!isSystemTopic(sourceTopicName) && isReadOnly) {
-//            properties.put("PULSAR.SHADOW_SOURCE", sourceTopicName.toString());
-//            tmpTopicName = TopicName.get(sourceTopicName.getPartitionedTopicName() + "-shadow");
-            tmpTopicName = TopicName.get(sourceTopicName.getDomain().toString(),
-                    NamespaceName.get(sourceTopicName.getNamespace() + "-shadow"), sourceTopicName.getLocalName());
+            topic = TopicName.get(sourceTopicName.getDomain().toString(),
+                    NamespaceService.getShadowNamespace(NamespaceName.get(sourceTopicName.getNamespace())),
+                    sourceTopicName.getLocalName());
             try {
                 PulsarAdmin admin = getPulsarAdmin();
-                admin.topics().createShadowTopic(tmpTopicName.toString(), sourceTopicName.toString());
-                admin.topics().setShadowTopics(sourceTopicName.toString(), Collections.singletonList(tmpTopicName.toString()));
-//                List<String> list = admin.topics().getShadowTopics(sourceTopicName.toString());
-//                TopicPolicies sourceTopicPolicies =
-//                        getPulsar().getTopicPoliciesService().getTopicPoliciesIfExists(sourceTopicName);
-//                if (sourceTopicPolicies == null) {
-//                    sourceTopicPolicies = new TopicPolicies();
-//                }
-//                // TODO: Need lock for setting shadow topics
-//                sourceTopicPolicies.setShadowTopics(Collections.singletonList(tmpTopicName.toString()));
-//                // TODO: Make calling it async
-//                getPulsar().getTopicPoliciesService().updateTopicPoliciesAsync(sourceTopicName, sourceTopicPolicies).get();
-                System.out.printf("RO: Created shadow topic %s for %s\n", tmpTopicName, sourceTopicName);
+                admin.topics().createShadowTopic(topic.toString(), sourceTopicName.toString());
+                admin.topics().setShadowTopics(sourceTopicName.toString(),
+                        Collections.singletonList(topic.toString()));
             } catch (Exception e) {
                 return FutureUtil.failedFuture(e);
             }
         }
-        final TopicName topicName = tmpTopicName;
+        final TopicName topicName = topic;
         try {
             CompletableFuture<Optional<Topic>> topicFuture = topics.get(topicName.toString());
             if (topicFuture != null) {

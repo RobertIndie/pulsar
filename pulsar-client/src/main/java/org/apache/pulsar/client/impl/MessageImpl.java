@@ -306,6 +306,23 @@ public class MessageImpl<T> implements Message<T> {
         return msg;
     }
 
+    public static MessageImpl<byte[]> deserializeMetadataWithEmptyPayload(
+            ByteBuf headersAndPayloadWithBrokerEntryMetadata) throws IOException {
+        @SuppressWarnings("unchecked")
+        MessageImpl<byte[]> msg = (MessageImpl<byte[]>) RECYCLER.get();
+
+        BrokerEntryMetadata brokerEntryMetadata =
+                Commands.parseBrokerEntryMetadataIfExist(headersAndPayloadWithBrokerEntryMetadata);
+        Commands.parseMessageMetadata(headersAndPayloadWithBrokerEntryMetadata, msg.msgMetadata);
+        msg.payload = Unpooled.buffer();
+        msg.messageId = null;
+        msg.topic = null;
+        msg.cnx = null;
+        msg.brokerEntryMetadata = brokerEntryMetadata;
+        msg.consumerEpoch = DEFAULT_CONSUMER_EPOCH;
+        return msg;
+    }
+
     public void setReplicatedFrom(String cluster) {
         msgMetadata.setReplicatedFrom(cluster);
     }

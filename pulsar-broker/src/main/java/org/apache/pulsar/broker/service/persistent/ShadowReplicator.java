@@ -25,10 +25,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.pulsar.broker.PulsarServerException;
+import org.apache.pulsar.broker.namespace.NamespaceService;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.client.impl.MessageImpl;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
+import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.util.Codec;
 
 /**
@@ -36,6 +38,7 @@ import org.apache.pulsar.common.util.Codec;
  */
 @Slf4j
 public class ShadowReplicator extends PersistentReplicator {
+    boolean replicaPayload;
 
     public ShadowReplicator(String shadowTopic, PersistentTopic sourceTopic, ManagedCursor cursor,
                             BrokerService brokerService, PulsarClientImpl replicationClient)
@@ -43,6 +46,8 @@ public class ShadowReplicator extends PersistentReplicator {
         super(brokerService.pulsar().getConfiguration().getClusterName(), sourceTopic, cursor,
                 brokerService.pulsar().getConfiguration().getClusterName(), shadowTopic, brokerService,
                 replicationClient);
+        // TODO: Should introduce a configuration to control this behavior
+        this.replicaPayload = !NamespaceService.isShadowNamespace(TopicName.get(shadowTopic).getNamespace());
     }
 
     /**
@@ -67,7 +72,8 @@ public class ShadowReplicator extends PersistentReplicator {
                 ByteBuf headersAndPayload = entry.getDataBuffer();
                 MessageImpl msg;
                 try {
-                    msg = MessageImpl.deserializeSkipBrokerEntryMetaData(headersAndPayload);
+                    msg = replicaPayload ? MessageImpl.deserializeSkipBrokerEntryMetaData(headersAndPayload) :
+                            MessageImpl.deserializeMetadataWithEmptyPayload(headersAndPayload);
                 } catch (Throwable t) {
                     log.error("[{}] Failed to deserialize message at {} (buffer size: {}): {}", replicatorId,
                             entry.getPosition(), length, t.getMessage(), t);

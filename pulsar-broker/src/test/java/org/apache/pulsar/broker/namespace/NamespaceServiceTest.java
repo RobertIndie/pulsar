@@ -826,6 +826,15 @@ public class NamespaceServiceTest extends BrokerTestBase {
         });
     }
 
+    @Test
+    public void testCheckReadOnlyNamespace() {
+        assertTrue(NamespaceService.isShadowNamespace("public/default-shadow"));
+        assertTrue(NamespaceService.isShadowNamespace("public/shadow-shadow"));
+        assertTrue(NamespaceService.isShadowNamespace("public-shadow/a-shadow"));
+        assertFalse(NamespaceService.isShadowNamespace("public/shadow"));
+        assertFalse(NamespaceService.isShadowNamespace("public-shadow/shadow"));
+    }
+
     /**
      * 1. Manually trigger "LoadReportUpdaterTask"
      * 2. Registry another new zk-node-listener "waitForBrokerChangeNotice".

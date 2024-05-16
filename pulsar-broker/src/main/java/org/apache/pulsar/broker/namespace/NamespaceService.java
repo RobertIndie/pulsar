@@ -139,6 +139,8 @@ public class NamespaceService implements AutoCloseable {
     public static final Pattern HEARTBEAT_NAMESPACE_PATTERN = Pattern.compile("pulsar/[^/]+/([^:]+:\\d+)");
     public static final Pattern HEARTBEAT_NAMESPACE_PATTERN_V2 = Pattern.compile("pulsar/([^:]+:\\d+)");
     public static final Pattern SLA_NAMESPACE_PATTERN = Pattern.compile(SLA_NAMESPACE_PROPERTY + "/[^/]+/([^:]+:\\d+)");
+    public static final Pattern SHADOW_NAMESPACE_PATTER = Pattern.compile("[^/]+/[^/]*-shadow$");
+    public static final String SHADOW_NAMESPACE_FMT = "%s-shadow";
     public static final String HEARTBEAT_NAMESPACE_FMT = "pulsar/%s/%s";
     public static final String HEARTBEAT_NAMESPACE_FMT_V2 = "pulsar/%s";
     public static final String SLA_NAMESPACE_FMT = SLA_NAMESPACE_PROPERTY + "/%s/%s";
@@ -1640,6 +1642,10 @@ public class NamespaceService implements AutoCloseable {
         return NamespaceName.get(String.format(SLA_NAMESPACE_FMT, config.getClusterName(), lookupBroker));
     }
 
+    public static NamespaceName getShadowNamespace(NamespaceName sourceNamespace) {
+        return NamespaceName.get(String.format(SHADOW_NAMESPACE_FMT, sourceNamespace.toString()));
+    }
+
     public static String checkHeartbeatNamespace(ServiceUnitId ns) {
         Matcher m = HEARTBEAT_NAMESPACE_PATTERN.matcher(ns.getNamespaceObject().toString());
         if (m.matches()) {
@@ -1674,6 +1680,10 @@ public class NamespaceService implements AutoCloseable {
                 || SLA_NAMESPACE_PATTERN.matcher(namespace).matches()
                 || HEARTBEAT_NAMESPACE_PATTERN.matcher(namespace).matches()
                 || HEARTBEAT_NAMESPACE_PATTERN_V2.matcher(namespace).matches();
+    }
+
+    public static boolean isShadowNamespace(String namespace) {
+        return SHADOW_NAMESPACE_PATTER.matcher(namespace).matches();
     }
 
     /**
